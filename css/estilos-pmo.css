@@ -1,0 +1,123 @@
+.ig-container { font-family: sans-serif; max-width: 1100px; margin: 0 auto; color: #333; }
+.ig-card { background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+.ig-flex { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.ig-input { padding: 8px; border: 1px solid #ccc; border-radius: 5px; flex: 1; min-width: 140px; font-size: 13px; }
+.ig-btn { background: #2271b1; color: #fff; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 12px; }
+
+.ig-task-grid { display: flex; flex-direction: column; gap: 10px; }
+
+.ig-task-item { border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; border-left: 6px solid #ccc; position:relative; transition: background-color 0.8s ease, transform 0.2s, border-left-color 0.5s; overflow:hidden; }
+.ig-task-focused { background-color: #fffbe5 !important; transform: scale(1.01); border-color: #ecc94b; }
+.ig-task-item summary { padding: 15px; cursor: pointer; outline: none; list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: 15px; background: #fff; transition: background 0.2s; }
+.ig-task-item summary::-webkit-details-marker { display: none; }
+.ig-task-item summary:hover { background: #f8fafc; }
+.ig-task-item[open] summary { border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+
+.ig-progress-bar { background: #eee; height: 6px; border-radius: 3px; overflow: hidden; margin-top:4px; }
+.ig-progress-fill { height: 100%; transition: background-color 0.5s; }
+.ig-badge { font-size: 9px; padding: 2px 5px; background: #e2e8f0; border-radius: 3px; font-weight: bold; text-transform: uppercase; }
+.ig-form-box { background:#f9f9f9; padding:10px; border-radius:6px; border:1px solid #eee; margin-top:10px; }
+.ig-subtask-box { background:#fff; border-left:3px solid #0073aa; padding:10px; margin-top:8px; font-size:11px; border-radius:4px; border-right:1px solid #eee; border-top:1px solid #eee; border-bottom:1px solid #eee; }
+
+.ig-diff { font-size: 10px; padding: 2px 4px; border-radius: 4px; font-weight: bold; margin-left: 5px; display: inline-block; }
+.up { color: #155724; background: #d4edda; } .down { color: #721c24; background: #f8d7da; } .neutral { color: #383d41; background: #e2e3e5; }
+
+.gantt .bar-red .bar { fill: #e53e3e; } .gantt .bar-red .bar-progress { fill: #c53030; }
+.gantt .bar-orange .bar { fill: #ed8936; } .gantt .bar-orange .bar-progress { fill: #dd6b20; }
+.gantt .bar-yellow .bar { fill: #ecc94b; } .gantt .bar-yellow .bar-progress { fill: #d69e2e; }
+.gantt .bar-green .bar { fill: #48bb78; } .gantt .bar-green .bar-progress { fill: #38a169; }
+.gantt .bar-gray .bar { fill: #a0aec0; } .gantt .bar-gray .bar-progress { fill: #718096; }
+
+.ig-date-updated { color: #e53e3e; transition: color 1s ease; }
+
+.ig-accordion { margin-bottom: 15px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.ig-accordion summary { background: #f8fafc; padding: 12px 15px; font-weight: bold; color: #334155; cursor: pointer; list-style: none; font-size: 14px; display: flex; align-items: center; border-bottom: 1px solid transparent; }
+.ig-accordion summary::-webkit-details-marker { display: none; }
+.ig-accordion summary::before { content: '▶'; margin-right: 10px; font-size: 10px; color: #94a3b8; transition: transform 0.2s; }
+.ig-accordion[open] summary { border-bottom: 1px solid #e2e8f0; }
+.ig-accordion[open] summary::before { transform: rotate(90deg); }
+.ig-accordion-content { padding: 15px; }
+
+/* 🔒 ESCUDO VISUAL GANTT (Se activa si el contenedor tiene la clase ig-gantt-readonly) */
+.ig-gantt-readonly .bar-wrapper { pointer-events: none !important; cursor: default !important; }
+.ig-gantt-readonly .handle-group { display: none !important; }
+
+/* ==========================================
+   NUEVA ESTRUCTURA BI DASHBOARD
+   ========================================== */
+.ig-bi-layout {
+    display: grid;
+    grid-template-columns: 200px 1fr; /* Columna izquierda fija, derecha fluida */
+    gap: 25px;
+    align-items: start;
+    margin-top: 15px;
+}
+
+/* Sidebar Izquierdo (Filtros y Tareas) */
+.ig-sidebar {
+    position: sticky;
+    top: 20px;
+    max-height: 95vh;
+    overflow-y: auto;
+    padding-right: 10px;
+}
+.ig-sidebar::-webkit-scrollbar { width: 6px; }
+.ig-sidebar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+/* Contenido Principal (Gráficos y KPIs) */
+.ig-main-board {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow: hidden;
+}
+
+/* Tarjetas de Indicadores (KPIs) */
+.ig-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+}
+.ig-kpi-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+.ig-kpi-title { font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase; margin-bottom: 5px; }
+.ig-kpi-value { font-size: 24px; font-weight: 900; color: #1e293b; line-height: 1; }
+
+/* Cuadrícula de Gráficos (Mitad y Mitad) */
+.ig-charts-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+.ig-chart-box {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    min-width: 0;
+}
+
+
+/* Ajustes Responsivos para pantallas más pequeñas (Móviles y Tablets) */
+@media (max-width: 1024px) {
+    .ig-bi-layout { 
+        display: flex; 
+        flex-direction: column; /* 👈 Envía el árbol de filtros a la cabecera */
+        gap: 15px;
+    }
+    .ig-sidebar { position: relative; max-height: none; top: 0; overflow-y: visible; width: 100%; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
+    .ig-charts-row { grid-template-columns: 1fr; }
+    
+    /* Scroll táctil suave para el Gantt en celulares */
+    .ig-chart-box { min-width: 0; }
+    .gantt-container { overflow-x: auto; -webkit-overflow-scrolling: touch; } 
+}
