@@ -167,44 +167,97 @@ function ig_recalcular_promedio_tarea($tarea_id) {
     }
 }
 
-// 5. RECEPTOR INTERACTIVO DEL GANTT VÍA AJAX (CORREGIDO PARA DB Y SEMÁFORO)
+// 5. RECEPTOR INTERACTIVO DEL GANTT VÍA AJAX
 add_action('wp_ajax_ig_update_task_dates', 'ig_update_task_dates_ajax');
 function ig_update_task_dates_ajax() {
     global $wpdb;
     if (!is_user_logged_in()) wp_send_json_error('No autorizado');
     
-    $task_id = intval(str_replace('T', '', $_POST['task_id']));
+    // 🔒 CANDADO DE SEGURIDAD BACKEND
+    $user = wp_get_current_user();
+    $roles = (array) $user->roles;
+    if (!in_array('administrator', $roles) && !in_array('gerente', $roles)) {
+        wp_send_json_error('Acceso denegado: Solo Gerencia puede modificar las fechas.');
+        exit;
+    }
     
-    // Las fechas ya llegan en formato estricto AAAA-MM-DD desde el Javascript
+    $task_id = intval(str_replace('T', '', $_POST['task_id']));
     $start = sanitize_text_field($_POST['start']);
     $end = sanitize_text_field($_POST['end']);
     
     if ($task_id > 0 && !empty($start) && !empty($end)) {
-        // 1. Guardar limpiamente en la Base de Datos
-        $wpdb->update(
-            $wpdb->prefix . 'ig_tareas', 
-            array('fecha_inicio' => $start, 'fecha_final' => $end), 
-            array('id' => $task_id)
-        );
+        // Guardar en la Base de Datos
+        $wpdb->update($wpdb->prefix . 'ig_tareas', array('fecha_inicio' => $start, 'fecha_final' => $end), array('id' => $task_id));
 
-        // 2. Recalcular el estado (Semáforo Térmico)
+        // NUEVA MATEMÁTICA: PORCENTAJE DE TIEMPO CONSUMIDO
         $porc = (int) $wpdb->get_var($wpdb->prepare("SELECT porcentaje FROM {$wpdb->prefix}ig_tareas WHERE id=%d", $task_id));
-        $hoy = new DateTime(current_time('Y-m-d'));
+        $inicio = new DateTime($start);
         $fin = new DateTime($end);
-        $diff = (int) $hoy->diff($fin)->format('%r%a');
+        $hoy = new DateTime(current_time('Y-m-d'));
 
-        if ($porc >= 100) { $color = "#718096"; $txt = "Finalizada"; $css_class = "bar-gray"; }
-        elseif ($diff < 0) { $color = "#e53e3e"; $txt = "Vencida (".abs($diff)."d)"; $css_class = "bar-red"; }
-        elseif ($diff <= 3) { $color = "#ed8936"; $txt = "Urgente"; $css_class = "bar-orange"; }
-        elseif ($diff <= 7) { $color = "#ecc94b"; $txt = "Crítica"; $css_class = "bar-yellow"; }
-        else { $color = "#28a745"; $txt = "Al día"; $css_class = "bar-green"; }
+        // Calcular días totales (incluye el primer y último día)
+        $diff_total = (int) $inicio->diff($fin)->format('%r%a');
+        $diff_restante = (int) $hoy->diff($fin)->format('%r%a');
 
-        // Devolver la respuesta para actualizar la tarjeta y el gráfico visualmente
-        wp_send_json_success(array(
-            'color' => $color,
-            'texto' => $txt,
-            'css_class' => $css_class
-        ));
+        // 1️⃣ Tarea Finalizada
+        if ($porc >= 100) {
+            $color = "#1960ca";
+            $txt = "Finalizada";
+            $css_class = "bar-gray";
+        }
+        // 2️⃣ Tarea Vencida (Rojo)
+        elseif ($diff_restante < 0) {
+            $color = "#e53e3e";
+            $txt = "Vencida (" . abs($diff_restante) . "d)";
+            $css_class = "bar-red";
+        }
+        // 3️⃣ Tarea Exprés (mismo día)
+        elseif ($diff_total == 0) {
+            $color = "#ed8936";
+            $txt = "Urgente (Exprés)";
+            $css_class = "bar-orange";
+        }
+        // 4️⃣ Tareas Regulares
+        else {
+            // Días transcurridos INCLUYENDO hoy
+            $diff_transcurrido = (int) $inicio->diff($hoy)->format('%r%a') + 1;
+            
+            // Asegurar que no sea negativo
+            if ($diff_transcurrido < 1) {
+                $diff_transcurrido = 1;
+            }
+            
+            // Calcular porcentaje: (días usados / días totales) * 100
+            // Importante: sumar 1 a diff_total porque incluye inicio y fin
+            $tiempo_consumido = ($diff_transcurrido / ($diff_total + 1)) * 100;
+            
+            // 🟢 Verde: 0% - 60%
+            if ($tiempo_consumido <= 60) {
+                $color = "#28a745";
+                $txt = "Al día (" . round($tiempo_consumido, 1) . "%)";
+                $css_class = "bar-green";
+            }
+            // 🟡 Amarillo: 61% - 85%
+            elseif ($tiempo_consumido <= 85) {
+                $color = "#ecc94b";
+                $txt = "Crítica (" . round($tiempo_consumido, 1) . "%)";
+                $css_class = "bar-yellow";
+            }
+            // 🟠 Naranja: 86% - 100%
+            elseif ($tiempo_consumido < 100) {
+                $color = "#ed8936";
+                $txt = "Urgencia (" . round($tiempo_consumido, 1) . "%)";
+                $css_class = "bar-orange";
+            }
+            // 🔴 Rojo: 100%+
+            else {
+                $color = "#e53e3e";
+                $txt = "Tiempo agotado";
+                $css_class = "bar-red";
+            }
+        }
+
+        wp_send_json_success(array('color' => $color, 'texto' => $txt, 'css_class' => $css_class));
     }
     wp_send_json_error('Datos inválidos');
 }
@@ -295,3 +348,14 @@ add_action('wp_enqueue_scripts', function(){ wp_enqueue_script('chart-js', 'http
 add_shortcode('tablero_gerencial', function(){ if(!is_user_logged_in()) return '🛑 Inicia sesión.'; ob_start(); include plugin_dir_path(__FILE__).'vista-shortcode.php'; return ob_get_clean(); });
 add_shortcode('carga_excel_gerencial', function(){ if(!is_user_logged_in()) return '🛑 Inicia sesión.'; ob_start(); include plugin_dir_path(__FILE__).'vista-carga.php'; return ob_get_clean(); });
 add_shortcode('login_gerencial', function(){ if(is_user_logged_in()) return '✅ Sesión iniciada.'; ob_start(); wp_login_form(); return ob_get_clean(); });
+// ==========================================
+// 6. ENCOLAMIENTO OFICIAL DE ESTILOS CSS
+// ==========================================
+add_action('wp_enqueue_scripts', 'ig_cargar_estilos_pmo');
+function ig_cargar_estilos_pmo() {
+    // Registramos e inyectamos el archivo CSS de forma limpia
+    wp_register_style('ig-estilos-tablero', plugin_dir_url(__FILE__) . 'css/estilos-pmo.css', array(), '1.0.0');
+    
+    // WordPress lo cargará automáticamente en la memoria cuando se dibuje el shortcode
+    wp_enqueue_style('ig-estilos-tablero');
+}
