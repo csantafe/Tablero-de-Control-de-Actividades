@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Información Gerencial
  * Description: Sistema PMO V17.1. Súper-Gantt interactivo con auto-cálculo de fechas y semáforo en tiempo real.
- * Version: 18.5
+ * Version: 18.6
  * Author: Carlos Santafe
  */
 
@@ -64,7 +64,8 @@ function ig_pagina_asignaciones() {
     
     // LÓGICA DE TRASLADOS DE EQUIPO
     if (isset($_POST['ig_asignar_area'])) {
-        $n_uid = intval($_POST['user_id']); $sd = sanitize_text_field($_POST['sede']); $gr = sanitize_text_field($_POST['grupo']);
+        $n_uid = intval($_POST['user_id']); $sd = sanitize_text_field($_POST['sede']); 
+        $gr = sanitize_text_field($_POST['grupo'] ?? '');
         $wpdb->delete($tabla_r, array('user_id' => $n_uid)); // Lo saca de su equipo anterior
         $wpdb->insert($tabla_r, array('user_id' => $n_uid, 'sede' => $sd, 'grupo' => $gr)); // Lo mete al nuevo
     }
@@ -124,7 +125,10 @@ function ig_pagina_asignaciones() {
                         } ?>
                     </select>
                     <select name="sede" required><option value="">Sede...</option><?php foreach($sedes_db as $s) echo "<option value='{$s->nombre}'>{$s->nombre}</option>"; ?></select>
-                    <select name="grupo" required><option value="">Grupo...</option><?php foreach($grupos_db as $g) echo "<option value='{$g->nombre}'>{$g->nombre}</option>"; ?></select>
+                    <select name="grupo">
+                        <option value="">-- Toda la Sede (Jefatura) --</option>
+                        <?php foreach($grupos_db as $g) echo "<option value='{$g->nombre}'>{$g->nombre}</option>"; ?>
+                    </select>
                     <button type="submit" name="ig_asignar_area" class="button button-primary">Vincular al Equipo</button>
                 </form>
             </div>
@@ -143,9 +147,10 @@ function ig_pagina_asignaciones() {
                         elseif(in_array('gerente', (array)$u->roles)) $rol_ui = '👔 Gerente';
                         else $rol_ui = 'Administrador';
                     }
+                    $texto_grupo = !empty($a->grupo) ? esc_html($a->grupo) : '<span style="color:#2271b1; font-weight:bold;">🌟 Jefatura de Sede (Todas las áreas)</span>';
                 ?>
                 <tr>
-                    <td><strong><?php echo esc_html($a->sede); ?></strong> &raquo; <?php echo esc_html($a->grupo); ?></td>
+                    <td><strong><?php echo esc_html($a->sede); ?></strong> &raquo; <?php echo $texto_grupo; ?></td>
                     <td><?php echo $u ? $u->display_name : '<span style="color:red;">Usuario Borrado</span>'; ?></td>
                     <td><?php echo $rol_ui; ?></td>
                     <td><a href="?page=ig-asignaciones&borrar_resp=<?php echo $a->id; ?>" style="color:red;">[Desvincular]</a></td>
@@ -173,7 +178,6 @@ function ig_update_task_dates_ajax() {
     global $wpdb;
     if (!is_user_logged_in()) wp_send_json_error('No autorizado');
     
-    // 🔒 CANDADO DE SEGURIDAD BACKEND
     $user = wp_get_current_user();
     $roles = (array) $user->roles;
     if (!in_array('administrator', $roles) && !in_array('gerente', $roles)) {
@@ -239,7 +243,7 @@ function ig_procesar_acciones_pmo() {
         
         $wpdb->insert($tabla_t, array('user_id'=>$rid, 'sede'=>$sd, 'grupo'=>$gr, 'tarea'=>$nombre_t, 'fecha_inicio'=>sanitize_text_field($_POST['t_inicio']), 'fecha_final'=>$fin_t, 'estado'=>'Sin iniciar', 'origen'=>'Gerencia', 'porcentaje'=>0, 'observacion'=>''));
         
-        // 📧 NOTIFICACIÓN: Tarea a Grupo
+        // 📧 NOTIFICACIÓN
         $resp_ids = $wpdb->get_col($wpdb->prepare("SELECT user_id FROM $tabla_r WHERE sede=%s AND grupo=%s", $sd, $gr));
         if (!empty($resp_ids)) {
             $correos = [];
@@ -253,7 +257,6 @@ function ig_procesar_acciones_pmo() {
                 wp_mail($correos, $asunto, $msj, array('Content-Type: text/plain; charset=UTF-8'));
             }
         }
-        
         wp_redirect($_SERVER['REQUEST_URI']); exit;
     }
 
@@ -266,49 +269,33 @@ function ig_procesar_acciones_pmo() {
         $wpdb->insert($tabla_st, array('tarea_id'=>$tarea_id, 'user_id'=>$id_op, 'subtarea'=>$nombre_st, 'fecha_inicio'=>sanitize_text_field($_POST['st_inicio']), 'fecha_final'=>$fin_st, 'porcentaje'=>0, 'observacion'=>''));
         ig_recalcular_promedio_tarea($tarea_id); 
         
-        // 📧 NOTIFICACIÓN: Subtarea a Operativo
+        // 📧 NOTIFICACIÓN
         $usr_op = get_userdata($id_op);
         if ($usr_op) {
             $asunto = "Nueva Subtarea Operativa: " . $nombre_st;
             $msj = "Hola " . $usr_op->display_name . ",\n\nTu coordinador te ha delegado una nueva subtarea en el tablero.\n\n📝 Subtarea: $nombre_st\n📅 Fecha Límite: $fin_st\n\nPor favor, ingresa al sistema para trabajarla y reportar avances.\n";
             wp_mail($usr_op->user_email, $asunto, $msj, array('Content-Type: text/plain; charset=UTF-8'));
         }
-        
         wp_redirect($_SERVER['REQUEST_URI']); exit;
     }
 
-// NUEVO: REASIGNAR SUBTAREA HUÉRFANA O CAMBIAR RESPONSABLE
-if (isset($_POST['ig_reasignar_subtarea'])) {
-    $st_id = intval($_POST['subtarea_id']);
-    $nuevo_uid = intval($_POST['nuevo_operativo']);
-    
-    // 1. Actualizamos la base de datos con el nuevo usuario
-    global $wpdb;
-    $wpdb->update($tabla_st, array('user_id' => $nuevo_uid), array('id' => $st_id));
-    
-    // 2. 📧 NOTIFICACIÓN: Lógica para enviar correo al nuevo responsable
-    $usr_op = get_userdata($nuevo_uid);
-    if ($usr_op) {
-        // Buscamos el nombre y la fecha de la subtarea en la base de datos para el correo
-        $st_row = $wpdb->get_row($wpdb->prepare("SELECT subtarea, fecha_final FROM $tabla_st WHERE id=%d", $st_id));
-        if ($st_row) {
-            $asunto = "Asignación de Subtarea Operativa: " . $st_row->subtarea;
-            
-            $msj = "Hola " . $usr_op->display_name . ",\n\n";
-            $msj .= "Se te ha asignado como responsable de una subtarea en el tablero.\n\n";
-            $msj .= "📝 Subtarea: " . $st_row->subtarea . "\n";
-            $msj .= "📅 Fecha Límite: " . $st_row->fecha_final . "\n\n";
-            $msj .= "Por favor, ingresa al sistema para trabajarla y reportar avances.\n";
-            
-            // Usamos la función nativa de WordPress para enviar el correo
-            wp_mail($usr_op->user_email, $asunto, $msj, array('Content-Type: text/plain; charset=UTF-8'));
+    if (isset($_POST['ig_reasignar_subtarea'])) {
+        $st_id = intval($_POST['subtarea_id']);
+        $nuevo_uid = intval($_POST['nuevo_operativo']);
+        $wpdb->update($tabla_st, array('user_id' => $nuevo_uid), array('id' => $st_id));
+        
+        // 📧 NOTIFICACIÓN
+        $usr_op = get_userdata($nuevo_uid);
+        if ($usr_op) {
+            $st_row = $wpdb->get_row($wpdb->prepare("SELECT subtarea, fecha_final FROM $tabla_st WHERE id=%d", $st_id));
+            if ($st_row) {
+                $asunto = "Asignación de Subtarea Operativa: " . $st_row->subtarea;
+                $msj = "Hola " . $usr_op->display_name . ",\n\nSe te ha asignado como responsable de una subtarea en el tablero.\n\n📝 Subtarea: " . $st_row->subtarea . "\n📅 Fecha Límite: " . $st_row->fecha_final . "\n\nPor favor, ingresa al sistema para trabajarla y reportar avances.\n";
+                wp_mail($usr_op->user_email, $asunto, $msj, array('Content-Type: text/plain; charset=UTF-8'));
+            }
         }
+        wp_redirect($_SERVER['REQUEST_URI']); exit;
     }
-    
-    // 3. Recargamos la página para reflejar los cambios
-    wp_redirect($_SERVER['REQUEST_URI']); 
-    exit;
-}
 
     if (isset($_POST['ig_actualizar_subtarea'])) {
         $st_id = intval($_POST['subtarea_id']); $tarea_id = intval($_POST['tarea_padre_id']); $obs = sanitize_textarea_field($_POST['observacion_texto'] ?? '');
