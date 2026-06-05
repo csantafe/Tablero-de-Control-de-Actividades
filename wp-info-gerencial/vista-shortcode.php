@@ -157,10 +157,24 @@ $where = "WHERE 1=1";
 if ($es_operativo) {
     $mis_tareas = $wpdb->get_col($wpdb->prepare("SELECT tarea_id FROM {$wpdb->prefix}ig_subtareas WHERE user_id = %d", $uid));
     if (empty($mis_tareas)) { $where .= " AND 1=0"; } else { $where .= " AND id IN (" . implode(',', $mis_tareas) . ")"; }
+    
 } elseif (!$es_gerente_o_admin) {
     $areas = $wpdb->get_results($wpdb->prepare("SELECT sede, grupo FROM {$wpdb->prefix}ig_responsables WHERE user_id = %d", $uid));
-    if ($areas) { $cs = []; foreach($areas as $a) $cs[] = $wpdb->prepare("(sede = %s AND grupo = %s)", $a->sede, $a->grupo); $where .= " AND (" . implode(" OR ", $cs) . ")"; }
-    else { $where .= " AND 1=0"; }
+    
+    if ($areas) { 
+        $cs = []; 
+        foreach($areas as $a) {
+            // Evaluamos con trim() para ignorar espacios en blanco accidentales
+            if (trim($a->grupo) === '') {
+                $cs[] = $wpdb->prepare("(sede = %s)", $a->sede);
+            } else {
+                $cs[] = $wpdb->prepare("(sede = %s AND grupo = %s)", $a->sede, $a->grupo);
+            }
+        } 
+        $where .= " AND (" . implode(" OR ", $cs) . ")"; 
+    } else { 
+        $where .= " AND 1=0"; 
+    }
 }
 
 if ($f_sede) $where .= $wpdb->prepare(" AND sede = %s", $f_sede);
