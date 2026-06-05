@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Información Gerencial
  * Description: Sistema PMO V17.1. Súper-Gantt interactivo con auto-cálculo de fechas y semáforo en tiempo real.
- * Version: 17.1
+ * Version: 18.5
  * Author: Carlos Santafe
  */
 
@@ -79,7 +79,7 @@ function ig_pagina_asignaciones() {
         $wpdb->delete($tabla_r, array('id' => $id_resp)); 
     }
 
-    // INCLUSIÓN DE TODOS LOS ROLES (Operativos incluidos)
+    // INCLUSIÓN DE TODOS LOS ROLES
     $users = get_users(array('role__in' => ['coordinador_grupo', 'gerente', 'administrator', 'funcionario_operativo']));
     
     // ORDENAMIENTO POR EQUIPOS
@@ -186,77 +186,37 @@ function ig_update_task_dates_ajax() {
     $end = sanitize_text_field($_POST['end']);
     
     if ($task_id > 0 && !empty($start) && !empty($end)) {
-        // Guardar en la Base de Datos
         $wpdb->update($wpdb->prefix . 'ig_tareas', array('fecha_inicio' => $start, 'fecha_final' => $end), array('id' => $task_id));
 
-        // NUEVA MATEMÁTICA: PORCENTAJE DE TIEMPO CONSUMIDO
         $porc = (int) $wpdb->get_var($wpdb->prepare("SELECT porcentaje FROM {$wpdb->prefix}ig_tareas WHERE id=%d", $task_id));
         $inicio = new DateTime($start);
         $fin = new DateTime($end);
         $hoy = new DateTime(current_time('Y-m-d'));
 
-        // Calcular días totales (incluye el primer y último día)
         $diff_total = (int) $inicio->diff($fin)->format('%r%a');
         $diff_restante = (int) $hoy->diff($fin)->format('%r%a');
 
-        // 1️⃣ Tarea Finalizada
         if ($porc >= 100) {
-            $color = "#1960ca";
-            $txt = "Finalizada";
-            $css_class = "bar-gray";
-        }
-        // 2️⃣ Tarea Vencida (Rojo)
-        elseif ($diff_restante < 0) {
-            $color = "#e53e3e";
-            $txt = "Vencida (" . abs($diff_restante) . "d)";
-            $css_class = "bar-red";
-        }
-        // 3️⃣ Tarea Exprés (mismo día)
-        elseif ($diff_total == 0) {
-            $color = "#ed8936";
-            $txt = "Urgente (Exprés)";
-            $css_class = "bar-orange";
-        }
-        // 4️⃣ Tareas Regulares
-        else {
-            // Días transcurridos INCLUYENDO hoy
+            $color = "#1960ca"; $txt = "Finalizada"; $css_class = "bar-gray";
+        } elseif ($diff_restante < 0) {
+            $color = "#e53e3e"; $txt = "Vencida (" . abs($diff_restante) . "d)"; $css_class = "bar-red";
+        } elseif ($diff_total == 0) {
+            $color = "#ed8936"; $txt = "Urgente (Exprés)"; $css_class = "bar-orange";
+        } else {
             $diff_transcurrido = (int) $inicio->diff($hoy)->format('%r%a') + 1;
-            
-            // Asegurar que no sea negativo
-            if ($diff_transcurrido < 1) {
-                $diff_transcurrido = 1;
-            }
-            
-            // Calcular porcentaje: (días usados / días totales) * 100
-            // Importante: sumar 1 a diff_total porque incluye inicio y fin
+            if ($diff_transcurrido < 1) $diff_transcurrido = 1;
             $tiempo_consumido = ($diff_transcurrido / ($diff_total + 1)) * 100;
             
-            // 🟢 Verde: 0% - 60%
             if ($tiempo_consumido <= 60) {
-                $color = "#28a745";
-                $txt = "Al día (" . round($tiempo_consumido, 1) . "%)";
-                $css_class = "bar-green";
-            }
-            // 🟡 Amarillo: 61% - 85%
-            elseif ($tiempo_consumido <= 85) {
-                $color = "#ecc94b";
-                $txt = "Crítica (" . round($tiempo_consumido, 1) . "%)";
-                $css_class = "bar-yellow";
-            }
-            // 🟠 Naranja: 86% - 100%
-            elseif ($tiempo_consumido < 100) {
-                $color = "#ed8936";
-                $txt = "Urgencia (" . round($tiempo_consumido, 1) . "%)";
-                $css_class = "bar-orange";
-            }
-            // 🔴 Rojo: 100%+
-            else {
-                $color = "#e53e3e";
-                $txt = "Tiempo agotado";
-                $css_class = "bar-red";
+                $color = "#28a745"; $txt = "Al día (" . round($tiempo_consumido, 1) . "%)"; $css_class = "bar-green";
+            } elseif ($tiempo_consumido <= 85) {
+                $color = "#ecc94b"; $txt = "Crítica (" . round($tiempo_consumido, 1) . "%)"; $css_class = "bar-yellow";
+            } elseif ($tiempo_consumido < 100) {
+                $color = "#ed8936"; $txt = "Urgencia (" . round($tiempo_consumido, 1) . "%)"; $css_class = "bar-orange";
+            } else {
+                $color = "#e53e3e"; $txt = "Tiempo agotado"; $css_class = "bar-red";
             }
         }
-
         wp_send_json_success(array('color' => $color, 'texto' => $txt, 'css_class' => $css_class));
     }
     wp_send_json_error('Datos inválidos');
@@ -270,25 +230,85 @@ function ig_procesar_acciones_pmo() {
     $fecha_ahora = current_time('d/m/Y H:i');
 
     if (isset($_POST['ig_crear_tarea_gerente'])) {
-        $sd = sanitize_text_field($_POST['t_sede']); $gr = sanitize_text_field($_POST['t_grupo']);
+        $sd = sanitize_text_field($_POST['t_sede']); 
+        $gr = sanitize_text_field($_POST['t_grupo']);
+        $nombre_t = sanitize_textarea_field($_POST['t_nombre']);
+        $fin_t = sanitize_text_field($_POST['t_fin']);
+        
         $rid = $wpdb->get_var($wpdb->prepare("SELECT user_id FROM $tabla_r WHERE sede=%s AND grupo=%s", $sd, $gr)) ?: get_current_user_id();
-        $wpdb->insert($tabla_t, array('user_id'=>$rid, 'sede'=>$sd, 'grupo'=>$gr, 'tarea'=>sanitize_textarea_field($_POST['t_nombre']), 'fecha_inicio'=>sanitize_text_field($_POST['t_inicio']), 'fecha_final'=>sanitize_text_field($_POST['t_fin']), 'estado'=>'Sin iniciar', 'origen'=>'Gerencia', 'porcentaje'=>0, 'observacion'=>''));
+        
+        $wpdb->insert($tabla_t, array('user_id'=>$rid, 'sede'=>$sd, 'grupo'=>$gr, 'tarea'=>$nombre_t, 'fecha_inicio'=>sanitize_text_field($_POST['t_inicio']), 'fecha_final'=>$fin_t, 'estado'=>'Sin iniciar', 'origen'=>'Gerencia', 'porcentaje'=>0, 'observacion'=>''));
+        
+        // 📧 NOTIFICACIÓN: Tarea a Grupo
+        $resp_ids = $wpdb->get_col($wpdb->prepare("SELECT user_id FROM $tabla_r WHERE sede=%s AND grupo=%s", $sd, $gr));
+        if (!empty($resp_ids)) {
+            $correos = [];
+            foreach ($resp_ids as $req_id) {
+                $usr_req = get_userdata($req_id);
+                if ($usr_req) $correos[] = $usr_req->user_email;
+            }
+            if (!empty($correos)) {
+                $asunto = "Nueva Tarea Asignada: " . $nombre_t;
+                $msj = "Hola,\n\nLa gerencia ha asignado una nueva tarea principal a tu grupo ($gr - $sd).\n\n📋 Tarea: $nombre_t\n📅 Fecha Límite: $fin_t\n\nPor favor, ingresa al tablero del Club para revisar los detalles.\n";
+                wp_mail($correos, $asunto, $msj, array('Content-Type: text/plain; charset=UTF-8'));
+            }
+        }
+        
         wp_redirect($_SERVER['REQUEST_URI']); exit;
     }
 
     if (isset($_POST['ig_crear_subtarea'])) {
         $tarea_id = intval($_POST['tarea_padre_id']);
-        $wpdb->insert($tabla_st, array('tarea_id'=>$tarea_id, 'user_id'=>intval($_POST['st_operativo']), 'subtarea'=>sanitize_textarea_field($_POST['st_nombre']), 'fecha_inicio'=>sanitize_text_field($_POST['st_inicio']), 'fecha_final'=>sanitize_text_field($_POST['st_fin']), 'porcentaje'=>0, 'observacion'=>''));
-        ig_recalcular_promedio_tarea($tarea_id); wp_redirect($_SERVER['REQUEST_URI']); exit;
-    }
-
-    // NUEVO: REASIGNAR SUBTAREA HUÉRFANA
-    if (isset($_POST['ig_reasignar_subtarea'])) {
-        $st_id = intval($_POST['subtarea_id']);
-        $nuevo_uid = intval($_POST['nuevo_operativo']);
-        $wpdb->update($tabla_st, array('user_id' => $nuevo_uid), array('id' => $st_id));
+        $id_op = intval($_POST['st_operativo']);
+        $nombre_st = sanitize_textarea_field($_POST['st_nombre']);
+        $fin_st = sanitize_text_field($_POST['st_fin']);
+        
+        $wpdb->insert($tabla_st, array('tarea_id'=>$tarea_id, 'user_id'=>$id_op, 'subtarea'=>$nombre_st, 'fecha_inicio'=>sanitize_text_field($_POST['st_inicio']), 'fecha_final'=>$fin_st, 'porcentaje'=>0, 'observacion'=>''));
+        ig_recalcular_promedio_tarea($tarea_id); 
+        
+        // 📧 NOTIFICACIÓN: Subtarea a Operativo
+        $usr_op = get_userdata($id_op);
+        if ($usr_op) {
+            $asunto = "Nueva Subtarea Operativa: " . $nombre_st;
+            $msj = "Hola " . $usr_op->display_name . ",\n\nTu coordinador te ha delegado una nueva subtarea en el tablero.\n\n📝 Subtarea: $nombre_st\n📅 Fecha Límite: $fin_st\n\nPor favor, ingresa al sistema para trabajarla y reportar avances.\n";
+            wp_mail($usr_op->user_email, $asunto, $msj, array('Content-Type: text/plain; charset=UTF-8'));
+        }
+        
         wp_redirect($_SERVER['REQUEST_URI']); exit;
     }
+
+// NUEVO: REASIGNAR SUBTAREA HUÉRFANA O CAMBIAR RESPONSABLE
+if (isset($_POST['ig_reasignar_subtarea'])) {
+    $st_id = intval($_POST['subtarea_id']);
+    $nuevo_uid = intval($_POST['nuevo_operativo']);
+    
+    // 1. Actualizamos la base de datos con el nuevo usuario
+    global $wpdb;
+    $wpdb->update($tabla_st, array('user_id' => $nuevo_uid), array('id' => $st_id));
+    
+    // 2. 📧 NOTIFICACIÓN: Lógica para enviar correo al nuevo responsable
+    $usr_op = get_userdata($nuevo_uid);
+    if ($usr_op) {
+        // Buscamos el nombre y la fecha de la subtarea en la base de datos para el correo
+        $st_row = $wpdb->get_row($wpdb->prepare("SELECT subtarea, fecha_final FROM $tabla_st WHERE id=%d", $st_id));
+        if ($st_row) {
+            $asunto = "Asignación de Subtarea Operativa: " . $st_row->subtarea;
+            
+            $msj = "Hola " . $usr_op->display_name . ",\n\n";
+            $msj .= "Se te ha asignado como responsable de una subtarea en el tablero.\n\n";
+            $msj .= "📝 Subtarea: " . $st_row->subtarea . "\n";
+            $msj .= "📅 Fecha Límite: " . $st_row->fecha_final . "\n\n";
+            $msj .= "Por favor, ingresa al sistema para trabajarla y reportar avances.\n";
+            
+            // Usamos la función nativa de WordPress para enviar el correo
+            wp_mail($usr_op->user_email, $asunto, $msj, array('Content-Type: text/plain; charset=UTF-8'));
+        }
+    }
+    
+    // 3. Recargamos la página para reflejar los cambios
+    wp_redirect($_SERVER['REQUEST_URI']); 
+    exit;
+}
 
     if (isset($_POST['ig_actualizar_subtarea'])) {
         $st_id = intval($_POST['subtarea_id']); $tarea_id = intval($_POST['tarea_padre_id']); $obs = sanitize_textarea_field($_POST['observacion_texto'] ?? '');
@@ -348,14 +368,12 @@ add_action('wp_enqueue_scripts', function(){ wp_enqueue_script('chart-js', 'http
 add_shortcode('tablero_gerencial', function(){ if(!is_user_logged_in()) return '🛑 Inicia sesión.'; ob_start(); include plugin_dir_path(__FILE__).'vista-shortcode.php'; return ob_get_clean(); });
 add_shortcode('carga_excel_gerencial', function(){ if(!is_user_logged_in()) return '🛑 Inicia sesión.'; ob_start(); include plugin_dir_path(__FILE__).'vista-carga.php'; return ob_get_clean(); });
 add_shortcode('login_gerencial', function(){ if(is_user_logged_in()) return '✅ Sesión iniciada.'; ob_start(); wp_login_form(); return ob_get_clean(); });
+
 // ==========================================
 // 6. ENCOLAMIENTO OFICIAL DE ESTILOS CSS
 // ==========================================
 add_action('wp_enqueue_scripts', 'ig_cargar_estilos_pmo');
 function ig_cargar_estilos_pmo() {
-    // Registramos e inyectamos el archivo CSS de forma limpia
     wp_register_style('ig-estilos-tablero', plugin_dir_url(__FILE__) . 'css/estilos-pmo.css', array(), '1.0.0');
-    
-    // WordPress lo cargará automáticamente en la memoria cuando se dibuje el shortcode
     wp_enqueue_style('ig-estilos-tablero');
 }
